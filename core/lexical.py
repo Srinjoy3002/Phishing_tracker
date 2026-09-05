@@ -1,13 +1,20 @@
 """
 Lexical and URL structure heuristic analyzer.
 Performs zero-latency static analysis on the URL string.
+Includes reverse-tunnel detection and deceptive URL-masking extraction.
 """
 
 import math
 import re
 import ipaddress
 from urllib.parse import urlparse, unquote
-from core.config import SUSPICIOUS_TLDS, TARGETED_BRANDS, SENSITIVE_KEYWORDS, URL_SHORTENERS
+from core.config import (
+    SUSPICIOUS_TLDS,
+    TARGETED_BRANDS,
+    SENSITIVE_KEYWORDS,
+    URL_SHORTENERS,
+    REVERSE_TUNNEL_SERVICES
+)
 
 
 def calculate_entropy(text: str) -> float:
@@ -27,17 +34,13 @@ def calculate_entropy(text: str) -> float:
 
 def is_ip_address(host: str) -> bool:
     """Check if the hostname is a direct IPv4, IPv6, or integer/hex obfuscated IP."""
-    # Strip port if present
     clean_host = host.split(':')[0].strip('[]')
-    
-    # Standard IPv4 or IPv6
     try:
         ipaddress.ip_address(clean_host)
         return True
     except ValueError:
         pass
 
-    # Hexadecimal IP (e.g., 0x7f000001) or pure numeric DWORD IP
     if re.match(r"^0x[0-9a-fA-F]+$", clean_host):
         return True
     if clean_host.isdigit() and int(clean_host) > 0:
@@ -47,10 +50,7 @@ def is_ip_address(host: str) -> bool:
 
 
 def check_punycode_homograph(host: str) -> tuple[bool, str]:
-    """
-    Detects Punycode (xn--) and IDN Homograph attacks where non-Latin lookalike
-    characters (Cyrillic, Greek) are used to impersonate legitimate characters.
-    """
+    """Detects Punycode (xn--) and IDN Homograph attacks."""
     if "xn--" in host.lower():
         try:
             decoded = host.encode("utf-8").decode("idna")
@@ -58,7 +58,6 @@ def check_punycode_homograph(host: str) -> tuple[bool, str]:
         except Exception:
             return True, f"Punycode domain detected: '{host}'"
             
-    # Check for mixed script or non-ASCII characters directly
     non_ascii = [c for c in host if ord(c) > 127]
     if non_ascii:
         return True, f"Non-ASCII homograph characters present in domain: {set(non_ascii)}"
@@ -66,17 +65,28 @@ def check_punycode_homograph(host: str) -> tuple[bool, str]:
     return False, ""
 
 
+def check_reverse_tunnel(host: str) -> tuple[bool, str]:
+    """
+    Detects if the hostname is hosted on a reverse-tunneling or port-forwarding service
+    (Cloudflare Quick Tunnels, Ngrok, Localtunnel, Serveo, etc.)
+    used heavily by automated phishing frameworks (PyPhisher, Zphisher).
+    """
+    host_lower = host.lower()
+    for tunnel_domain in REVERSE_TUNNEL_SERVICES:
+        if host_lower == tunnel_domain or host_lower.endswith("." + tunnel_domain):
+            return True, tunnel_domain
+    return False, ""
+
+
 def check_brand_spoofing(host: str) -> tuple[bool, str, str]:
     """
-    Detects combosquatting and typosquatting where a well-known brand is embedded
-    in the subdomain or domain name while belonging to an unverified entity.
+    Detects combosquatting where a known brand is in the hostname
+    while not belonging to the official domain.
     """
     host_lower = host.lower()
     
     for brand, legit_domains in TARGETED_BRANDS.items():
-        # Check if the brand name is present anywhere in the hostname
         if brand in host_lower:
-            # Check if it matches any official legitimate domain
             is_legit = False
             for legit in legit_domains:
                 if host_lower == legit or host_lower.endswith("." + legit):
@@ -84,7 +94,7 @@ def check_brand_spoofing(host: str) -> tuple[bool, str, str]:
                     break
             
             if not is_legit:
-                return True, brand, f"Brand impersonation detected: Hostname references '{brand.upper()}' but does not belong to authorized domains ({', '.join(legit_domains)})"
+                return True, brand, f"Brand impersonation: Hostname references '{brand.upper()}' but does not belong to authorized domains ({', '.join(legit_domains)})"
                 
     return False, "", ""
 
@@ -96,12 +106,13 @@ def analyze_lexical(raw_url: str) -> dict:
     """
     url = raw_url.strip()
     if not url.startswith(("http://", "https://")):
-        url = "http://" + url  # default schema for parsing
+        url = "http://" + url
 
     parsed = urlparse(url)
     hostname = (parsed.hostname or "").lower()
     path = parsed.path
     query = parsed.query
+    netloc = parsed.netloc
     full_url = raw_url.strip()
 
     findings = []
@@ -114,10 +125,74 @@ def analyze_lexical(raw_url: str) -> dict:
         "url_length": len(full_url),
         "subdomain_count": 0,
         "tld": "",
-        "brand_target": None
+        "brand_target": None,
+        "is_reverse_tunnel": False,
+        "tunnel_provider": None,
+        "masked_bait": None
     }
 
-    # 1. IP Address Hostname
+    # 1. Reverse Tunnel / Ephemeral Hosting Detection (PyPhisher / Ngrok / Cloudflare Quick Tunnels)
+    is_tunnel, tunnel_svc = check_reverse_tunnel(hostname)
+    if is_tunnel:
+        metrics["is_reverse_tunnel"] = True
+        metrics["tunnel_provider"] = tunnel_svc
+        findings.append({
+            "id": "reverse_tunnel_service",
+            "category": "Tunnel Infrastructure",
+            "title": f"Ephemeral Reverse Tunnel Host ({tunnel_svc})",
+            "description": f"Domain is hosted via '{tunnel_svc}'. Ephemeral reverse-tunnels (Cloudflare Tunnels, Ngrok, Localtunnel) are the #1 infrastructure vector weaponized by automated phishing tools (PyPhisher, Zphisher).",
+            "mitre": "T1585",
+            "severity": "HIGH"
+        })
+
+        # Check for Cloudflare Quick Tunnel 4-word random subdomain pattern
+        # e.g., occupation-exposure-piece-spam.trycloudflare.com
+        subdomain_part = hostname.replace("." + tunnel_svc, "")
+        hyphen_parts = subdomain_part.split("-")
+        if len(hyphen_parts) >= 3:
+            findings.append({
+                "id": "tunnel_random_subdomains",
+                "category": "Tunnel Infrastructure",
+                "title": f"Auto-Generated Tunnel Subdomain ({len(hyphen_parts)} words)",
+                "description": f"Subdomain '{subdomain_part}' follows automated random multi-word naming format (e.g. Cloudflare Quick Tunnels generated by PyPhisher).",
+                "mitre": "T1583.001",
+                "severity": "HIGH"
+            })
+
+    # 2. Deceptive URL Masking & Bait Extraction (@ sign)
+    if "@" in netloc:
+        bait_part, actual_host = netloc.split("@", 1)
+        bait_decoded = unquote(bait_part)
+        metrics["masked_bait"] = bait_decoded
+
+        findings.append({
+            "id": "url_redirection_trick",
+            "category": "Lexical",
+            "title": "Deceptive URL Masking Trick ('@' symbol)",
+            "description": f"RFC 3986 redirection exploit: Browsers ignore the prefix '{bait_decoded}' and silently route traffic to '{actual_host}'.",
+            "mitre": "T1566.002",
+            "severity": "CRITICAL"
+        })
+
+        # Analyze the bait string itself for brand masquerading or lures
+        bait_lower = bait_decoded.lower()
+        matched_bait_brands = [b for b in TARGETED_BRANDS if b in bait_lower]
+        matched_bait_kws = [k for k in SENSITIVE_KEYWORDS if k in bait_lower]
+
+        if matched_bait_brands or matched_bait_kws:
+            brand_str = f"targeting {', '.join(matched_bait_brands).upper()}" if matched_bait_brands else ""
+            findings.append({
+                "id": "url_masked_bait",
+                "category": "Lexical",
+                "title": f"Weaponized Masking Bait ({brand_str})",
+                "description": f"The bait text '{bait_decoded}' masquerades as legitimate services to trick the victim into clicking.",
+                "mitre": "T1566.002",
+                "severity": "CRITICAL"
+            })
+            if matched_bait_brands and not metrics["brand_target"]:
+                metrics["brand_target"] = matched_bait_brands[0]
+
+    # 3. IP Address Hostname
     if is_ip_address(hostname):
         findings.append({
             "id": "ip_in_url",
@@ -128,7 +203,7 @@ def analyze_lexical(raw_url: str) -> dict:
             "severity": "HIGH"
         })
 
-    # 2. Homograph / Punycode
+    # 4. Homograph / Punycode
     is_homograph, homograph_msg = check_punycode_homograph(hostname)
     if is_homograph:
         findings.append({
@@ -140,7 +215,7 @@ def analyze_lexical(raw_url: str) -> dict:
             "severity": "CRITICAL"
         })
 
-    # 3. Domain Shannon Entropy
+    # 5. Domain Shannon Entropy
     domain_parts = hostname.split('.')
     main_domain = domain_parts[-2] if len(domain_parts) >= 2 else hostname
     entropy = calculate_entropy(main_domain)
@@ -155,7 +230,7 @@ def analyze_lexical(raw_url: str) -> dict:
             "severity": "MEDIUM"
         })
 
-    # 4. Brand Impersonation / Combosquatting
+    # 6. Brand Impersonation / Combosquatting
     is_spoof, brand, spoof_msg = check_brand_spoofing(hostname)
     if is_spoof:
         metrics["brand_target"] = brand
@@ -168,7 +243,7 @@ def analyze_lexical(raw_url: str) -> dict:
             "severity": "CRITICAL"
         })
 
-    # 5. Top-Level Domain (TLD) Analysis
+    # 7. Top-Level Domain (TLD) Analysis
     if len(domain_parts) >= 2:
         tld = domain_parts[-1].lower()
         metrics["tld"] = tld
@@ -182,11 +257,10 @@ def analyze_lexical(raw_url: str) -> dict:
                 "severity": "MEDIUM"
             })
 
-    # 6. Subdomain Depth
-    # e.g., login.verification.bank.attacker.com has 4 dots
+    # 8. Subdomain Depth
     subdomain_count = max(0, len(domain_parts) - 2)
     metrics["subdomain_count"] = subdomain_count
-    if subdomain_count >= 3:
+    if subdomain_count >= 3 and not is_tunnel:
         findings.append({
             "id": "excessive_subdomains",
             "category": "Lexical",
@@ -196,18 +270,7 @@ def analyze_lexical(raw_url: str) -> dict:
             "severity": "MEDIUM"
         })
 
-    # 7. Redirection Trick (@ symbol in authority)
-    if "@" in parsed.netloc:
-        findings.append({
-            "id": "url_redirection_trick",
-            "category": "Lexical",
-            "title": "URL Authority Redirection Trick ('@' symbol)",
-            "description": "RFC 3986 authority trick: Browsers treat characters before '@' as user credentials and route traffic to the domain following the '@'.",
-            "mitre": "T1566.002",
-            "severity": "CRITICAL"
-        })
-
-    # 8. Double Slash Redirection in Path
+    # 9. Double Slash Redirection in Path
     if "//" in path:
         findings.append({
             "id": "double_slash_redirect",
@@ -218,9 +281,9 @@ def analyze_lexical(raw_url: str) -> dict:
             "severity": "LOW"
         })
 
-    # 9. Excessive Hyphens
+    # 10. Excessive Hyphens (if not a tunnel where hyphens are already flagged)
     hyphen_count = hostname.count("-")
-    if hyphen_count >= 3:
+    if hyphen_count >= 3 and not is_tunnel:
         findings.append({
             "id": "excessive_hyphens",
             "category": "Lexical",
@@ -230,18 +293,18 @@ def analyze_lexical(raw_url: str) -> dict:
             "severity": "MEDIUM"
         })
 
-    # 10. URL Length
+    # 11. URL Length
     if len(full_url) > 85:
         findings.append({
             "id": "url_length_excessive",
             "category": "Lexical",
             "title": f"Excessive URL Length ({len(full_url)} characters)",
-            "description": "Abnormally long URLs are frequently used to conceal the destination or embed base64/hex payloads.",
+            "description": "Abnormally long URLs are frequently used to conceal the destination or embed payloads.",
             "mitre": "T1566.002",
             "severity": "LOW"
         })
 
-    # 11. Sensitive Phishing Keywords
+    # 12. Sensitive Phishing Keywords
     matched_keywords = []
     combined_target = (hostname + path + query).lower()
     for kw in SENSITIVE_KEYWORDS:
@@ -258,7 +321,7 @@ def analyze_lexical(raw_url: str) -> dict:
             "severity": "MEDIUM"
         })
 
-    # 12. Known URL Shortener
+    # 13. Known URL Shortener
     if hostname in URL_SHORTENERS:
         findings.append({
             "id": "url_shortener",

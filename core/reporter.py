@@ -1,3 +1,9 @@
+"""
+Report rendering and data export module.
+Outputs formatted Rich terminal tables, color-coded score gauges,
+OPSEC status warnings, JSON, and Markdown reports.
+"""
+
 import sys
 import json
 from datetime import datetime, timezone
@@ -18,7 +24,6 @@ if sys.platform == "win32":
 console = Console(legacy_windows=False)
 
 
-
 def render_terminal_report(result: dict):
     """
     Render a comprehensive terminal dashboard for single URL scan results.
@@ -30,13 +35,24 @@ def render_terminal_report(result: dict):
     telemetry = result["telemetry"]
     findings = result["findings"]
     recs = result["recommendations"]
+    opsec_mode = result.get("opsec_mode", "DIRECT CONNECTION")
 
-    # 1. Header Overview
+    # 1. Header Overview with OPSEC status
     console.print()
     overview_table = Table(show_header=False, box=None, padding=(0, 2))
     overview_table.add_row("[bold cyan]Target URL:[/bold cyan]", f"[bold white]{result['url']}[/bold white]")
     overview_table.add_row("[bold cyan]Resolved Host:[/bold cyan]", f"[yellow]{result['hostname']}[/yellow]")
     overview_table.add_row("[bold cyan]Scheme / Protocol:[/bold cyan]", f"{result['scheme'].upper()}")
+    
+    # OPSEC indicator styling
+    if "TOR" in opsec_mode:
+        opsec_styled = f"[bold green]🛡️ {opsec_mode}[/bold green]"
+    elif "PROXY" in opsec_mode:
+        opsec_styled = f"[bold cyan]🛡️ {opsec_mode}[/bold cyan]"
+    else:
+        opsec_styled = f"[bold red]⚠️ {opsec_mode} (Real IP Exposed)[/bold red]"
+    overview_table.add_row("[bold cyan]OPSEC Status:[/bold cyan]", opsec_styled)
+    
     console.print(overview_table)
     console.print()
 
@@ -72,26 +88,38 @@ def render_terminal_report(result: dict):
     telem_table.add_column("Observed Value", style="cyan")
     telem_table.add_column("Assessment", style="dim white")
 
+    # Reverse Tunnel Service Check
+    is_tunnel = telemetry["lexical"].get("is_reverse_tunnel", False)
+    tunnel_prov = telemetry["lexical"].get("tunnel_provider", "None")
+    if is_tunnel:
+        telem_table.add_row("Infrastructure Type", f"Reverse Tunnel ({tunnel_prov})", "[bold red]High Risk (Phishing Vector)[/bold red]")
+    else:
+        telem_table.add_row("Infrastructure Type", "Standard Web Host", "[green]Normal[/green]")
+
     # Domain Age
     age_days = telemetry["whois"].get("age_days")
-    if age_days is not None:
+    if is_tunnel:
+        telem_table.add_row("Domain Age", "Ephemeral / Fast-Deploy", "[yellow]Dynamic Tunnel[/yellow]")
+    elif age_days is not None:
         age_str = f"{age_days} days (Created: {telemetry['whois'].get('creation_date', 'N/A')})"
         age_eval = "[bold red]High Risk (Fresh)[/bold red]" if age_days < 30 else ("[yellow]Young[/yellow]" if age_days < 90 else "[green]Established[/green]")
+        telem_table.add_row("Domain Age", age_str, age_eval)
     else:
-        age_str = "Unavailable / Private"
-        age_eval = "[dim]Unverified[/dim]"
-    telem_table.add_row("Domain Age", age_str, age_eval)
+        telem_table.add_row("Domain Age", "Unavailable / Private", "[dim]Unverified[/dim]")
 
     # DNS Resolution
     a_records = telemetry["dns"].get("a_records", [])
     ip_str = ", ".join(a_records[:3]) if a_records else "Unresolved"
     telem_table.add_row("Resolved IP(s)", ip_str, "[green]Active[/green]" if a_records else "[red]Dead / Sinkholed[/red]")
 
-    # MX Records
-    mx_records = telemetry["dns"].get("mx_records", [])
-    mx_str = f"{len(mx_records)} MX Record(s)" if mx_records else "None detected"
-    mx_eval = "[green]Configured[/green]" if mx_records else "[yellow]No Mail Server[/yellow]"
-    telem_table.add_row("Mail Exchange (MX)", mx_str, mx_eval)
+    # Phishing Kit Artifacts (login.php / exfiltration / IP loggers)
+    kit_eps = telemetry["content"].get("phishing_kit_endpoints_found", [])
+    if kit_eps:
+        telem_table.add_row("Kit Form Target", ", ".join(kit_eps), "[bold red]Harvest Endpoint[/bold red]")
+
+    victim_trackers = telemetry["content"].get("victim_trackers", [])
+    if victim_trackers:
+        telem_table.add_row("Victim IP Logger", ", ".join(victim_trackers), "[bold red]Active IP Trap[/bold red]")
 
     # SSL Issuer
     has_ssl = telemetry["ssl"].get("has_ssl", False)
@@ -119,7 +147,7 @@ def render_terminal_report(result: dict):
     if findings:
         findings_table = Table(title="[bold red]Triggered Threat Indicators[/bold red]", border_style="red")
         findings_table.add_column("Severity", width=12)
-        findings_table.add_column("Category", width=16, style="cyan")
+        findings_table.add_column("Category", width=22, style="cyan")
         findings_table.add_column("Indicator Title", style="bold white", width=32)
         findings_table.add_column("MITRE ATT&CK", width=14, style="magenta")
         findings_table.add_column("Evidence & Details", style="dim white")
@@ -172,6 +200,7 @@ def export_markdown(result: dict, filepath: str):
         f"**Generated:** {now_str}  ",
         f"**Target URL:** `{result['url']}`  ",
         f"**Risk Score:** `{result['risk_score']} / 100` ({result['classification']})  ",
+        f"**OPSEC Protection Mode:** `{result.get('opsec_mode', 'DIRECT')}`  ",
         "\n---\n",
         "## Executive Summary",
         f"- **Threat Classification:** {result['classification']}",
@@ -183,9 +212,8 @@ def export_markdown(result: dict, filepath: str):
         "| :--- | :--- |",
         f"| Domain | `{result['hostname']}` |",
         f"| Scheme | `{result['scheme']}` |",
+        f"| Reverse Tunnel | `{result['telemetry']['lexical'].get('is_reverse_tunnel', False)}` |",
         f"| Resolved IPs | `{', '.join(result['telemetry']['dns'].get('a_records', [])) or 'None'}` |",
-        f"| Domain Age | `{result['telemetry']['whois'].get('age_days', 'Unknown')} days` |",
-        f"| Registrar | `{result['telemetry']['whois'].get('registrar', 'Unknown')}` |",
         f"| SSL Issuer | `{result['telemetry']['ssl'].get('issuer', 'None')}` |",
         f"| Domain Entropy | `{result['telemetry']['lexical'].get('entropy', 0.0)}` |",
         f"| HTML Title | `{result['telemetry']['content'].get('title', 'None')}` |",

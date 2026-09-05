@@ -27,18 +27,22 @@
 
 | Vector | Indicator & Detection Logic | MITRE ATT&CK |
 | :--- | :--- | :--- |
+| **Reverse Tunneling (PyPhisher)** | Detects ephemeral reverse-tunnels (`trycloudflare.com`, `loca.lt`, `ngrok-free.app`, `serveo.net`) weaponized by automated phishing kits (PyPhisher, Zphisher). | `T1585` |
+| **Automated Subdomain Pattern** | Identifies Cloudflare Quick Tunnel 4-word auto-generated subdomains (e.g. `word1-word2-word3-word4.trycloudflare.com`). | `T1583.001` |
+| **Weaponized Masking Bait** | Evaluates the deceptive user-info bait string preceding `@` (e.g., `get-unlimited-followers-for-instagram@...`). | `T1566.002` |
+| **Phishing Kit Endpoints** | Fingerprints standard capture scripts (`login.php`, `post.php`, `process.php`, `capture.php`) used by cloned templates. | `T1056.003` |
+| **Victim IP Logger Traps** | Detects client-side victim tracking scripts (`ip-api.com`, `api.ipify.org`, `ipinfo.io`) that record visitor IP and geolocation. | `T1027` |
+| **Exfiltration Webhooks** | Identifies Telegram Bot API tokens (`api.telegram.org/bot`) and Discord webhooks embedded in page scripts. | `T1056.003` |
 | **Punycode / Homograph** | Detects IDN Homograph attacks (`xn--`) where Cyrillic or Greek lookalike characters spoof Latin characters (e.g., `pаypal.com`). | `T1583.001` |
 | **IP-in-Hostname** | Flags raw IPv4, IPv6, Hexadecimal (`0x...`), and Dword encoded IP addresses used in place of domain names. | `T1566.002` |
-| **Brand Combosquatting** | Cross-references high-profile brands (PayPal, Microsoft, Google, Apple, Amazon, Banking) combined with lure keywords (`secure`, `verify`, `login`). | `T1566.002` |
+| **Brand Combosquatting** | Cross-references high-profile brands (Instagram, Facebook, Google, Apple, Amazon, Banking) combined with lure keywords. | `T1566.002` |
 | **Shannon Entropy** | Calculates mathematical uncertainty $H(X)$ to detect Domain Generation Algorithms (DGA) and randomized malware URLs. | `T1584.004` |
 | **Suspicious TLDs** | Flags domains registered under high-abuse top-level domains (`.xyz`, `.top`, `.buzz`, `.tk`, `.work`, `.rest`). | `T1583.001` |
-| **Subdomain Stacking** | Detects deep subdomain nesting used to truncate deceptive domain names on mobile browser address bars. | `T1566.002` |
-| **Domain Freshness** | Queries standardized ICANN RDAP to flag domains registered `< 30 days` (critical) or `< 90 days` (young). | `T1583.001` |
-| **Missing MX Records** | Identifies domains claiming to represent enterprise brands that possess no Mail Exchange (MX) routing records. | `T1584.004` |
-| **SSL/TLS Vulnerabilities** | Detects self-signed certificates, expired certs, automated free certificates on banking portals, and freshly provisioned certs (`< 72 hrs`). | `T1583.008` |
+| **SSL/TLS Vulnerabilities** | Detects self-signed certificates, expired certs, automated free certificates on banking portals, and freshly provisioned certs. | `T1583.008` |
 | **Credential Form Hijack** | Analyzes HTML DOM to detect `<input type="password">` forms submitting credentials to foreign third-party hosts or cleartext HTTP. | `T1056.003` |
 | **Title Divergence** | Flags web pages claiming to be a brand in `<title>` while hosted on an unverified domain. | `T1566.002` |
 | **Anti-Analysis Scripts** | Uncovers JavaScript blocking right-clicks (`oncontextmenu`), Developer Tools (F12), or keyboard shortcuts. | `T1027` |
+
 
 ---
 
@@ -108,11 +112,26 @@ Skip network resolution, WHOIS, and SSL queries to perform instantaneous offline
 python phish_tracker.py -u "https://suspicious-domain.top/login" --fast
 ```
 
-### 5. Exporting Incident Reports (JSON & Markdown)
+### 5. Stealth & OPSEC Protection Modes (Hide IP from PyPhisher)
+When analyzing live phishing kits (e.g., PyPhisher, Zphisher), the server executes IP loggers (`ip-api.com`). Shield your identity using:
+
+```bash
+# Route all traffic through Tor (anonymizes your IP & geolocation)
+python phish_tracker.py -u "https://occupation-exposure-piece-spam.trycloudflare.com" --tor
+
+# Route via custom SOCKS5 or HTTP proxy
+python phish_tracker.py -u "https://suspicious-site.com" --proxy "socks5h://127.0.0.1:9050"
+
+# Zero-Touch Passive Recon (Zero packets sent to target web server, 100% invisible to PyPhisher)
+python phish_tracker.py -u "https://suspicious-site.com" --passive
+```
+
+### 6. Exporting Incident Reports (JSON & Markdown)
 Generate compliance, SIEM-ready JSON, and incident response Markdown reports:
 ```bash
 python phish_tracker.py -u "http://192.168.1.100/secure-banking/login.php" --json report.json --markdown report.md
 ```
+
 
 ---
 

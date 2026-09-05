@@ -2,7 +2,8 @@
 """
 PhishTracker: Advanced Cross-Platform Phishing Site Detector
 Operable on Kali Linux & Windows Terminal
-Author: Cybersecurity Engineering Lab
+Features: PyPhisher/Zphisher Kit Detection, Cloudflare Tunnel Telemetry, Tor & Proxy OPSEC Anonymity
+Author: Srinjoy3002
 """
 
 import sys
@@ -20,8 +21,8 @@ if sys.platform == "win32":
 import argparse
 from rich.console import Console
 from rich.table import Table
-from rich.status import Status
-from rich.prompt import Prompt
+from rich.prompt import Prompt, Confirm
+from rich.panel import Panel
 
 # Ensure local directory is in Python path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -33,9 +34,8 @@ from core.reporter import render_terminal_report, export_json, export_markdown
 console = Console(legacy_windows=False)
 
 
-
 def scan_single(url: str, args) -> dict:
-    """Scan a single target with live spinner status updates."""
+    """Scan a single target with live spinner status updates and OPSEC routing."""
     with console.status(f"[bold cyan]Scanning target: [white]{url}[/white]...", spinner="dots") as status:
         def update_progress(msg: str):
             status.update(f"[bold cyan]{msg}")
@@ -43,11 +43,13 @@ def scan_single(url: str, args) -> dict:
         result = scan_target(
             target_url=url,
             fast_mode=args.fast,
-            skip_content=args.no_content,
+            skip_content=args.no_content or args.passive,
+            proxy=args.proxy,
+            use_tor=args.tor,
             progress_callback=update_progress
         )
 
-    # Render results
+    # Render terminal report
     render_terminal_report(result)
 
     # Export if requested
@@ -82,7 +84,9 @@ def scan_batch(filepath: str, args):
             res = scan_target(
                 target_url=u,
                 fast_mode=args.fast,
-                skip_content=args.no_content,
+                skip_content=args.no_content or args.passive,
+                proxy=args.proxy,
+                use_tor=args.tor,
                 progress_callback=None
             )
             results.append(res)
@@ -117,7 +121,6 @@ def scan_batch(filepath: str, args):
     if args.json:
         export_json({"batch_results": results}, args.json)
     if args.markdown:
-        # Export all in markdown
         with open(args.markdown, "w", encoding="utf-8") as f:
             f.write(f"# PhishTracker Batch Scan Matrix ({len(urls)} targets)\n\n")
             f.write("| Host | Score | Threat Level | Findings Count |\n| :--- | :--- | :--- | :--- |\n")
@@ -127,8 +130,24 @@ def scan_batch(filepath: str, args):
 
 
 def interactive_mode(args):
-    """Interactive CLI REPL for Windows Terminal and Kali Linux."""
+    """Interactive CLI REPL with OPSEC privacy guard."""
     print_banner()
+
+    opsec_notice = (
+        "[bold white]OPSEC ADVISORY:[/bold white]\n"
+        " • Active content analysis sends HTTP requests to target servers.\n"
+        " • Phishing kits (e.g. PyPhisher, Zphisher) use IP-loggers (ip-api.com) to record victim IPs.\n"
+        " • [bold green]Recommended:[/bold green] Use [bold cyan]--tor[/bold cyan] or [bold cyan]--proxy[/bold cyan] to anonymize, or [bold cyan]--passive[/bold cyan] for zero-touch inspection."
+    )
+    console.print(Panel(opsec_notice, border_style="yellow", title="[bold yellow]OPERATIONAL SECURITY[/bold yellow]"))
+    console.print()
+
+    # If neither tor nor proxy is set, ask if user wants stealth mode
+    if not args.tor and not args.proxy and not args.passive:
+        use_stealth = Confirm.ask("[yellow]Enable Stealth Mode (skips active DOM requests to keep your IP hidden from PyPhisher)?[/yellow]", default=False)
+        if use_stealth:
+            args.passive = True
+
     console.print("[bold green]Interactive Mode Active.[/bold green] Type target URL to inspect (or 'exit' to quit).\n")
 
     while True:
@@ -150,27 +169,41 @@ def interactive_mode(args):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="PhishTracker: Advanced Phishing Site Detector (Kali Linux & Windows Terminal)",
+        description="PhishTracker: Multi-Vector Phishing Detector with OPSEC & PyPhisher Detection",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python phish_tracker.py -u "https://paypal-security-update.xyz/login"
+  # Scan PyPhisher Cloudflare Quick Tunnel:
+  python phish_tracker.py -u "https://occupation-exposure-piece-spam.trycloudflare.com"
+
+  # Scan with Deceptive URL Masking Bait (@ trick):
+  python phish_tracker.py -u "https://get-unlimited-followers-for-instagram@occupation-exposure-piece-spam.trycloudflare.com"
+
+  # Anonymize through Tor to prevent PyPhisher from logging your IP:
+  python phish_tracker.py -u "https://suspicious-link.com" --tor
+
+  # Route through custom SOCKS5 / HTTP proxy:
+  python phish_tracker.py -u "https://suspicious-link.com" --proxy "socks5h://127.0.0.1:9050"
+
+  # Zero-Touch Stealth Recon (Zero packets sent to target web server, 100% invisible to PyPhisher):
+  python phish_tracker.py -u "https://suspicious-link.com" --passive
+
+  # Batch Triage:
   python phish_tracker.py -f samples/test_urls.txt
-  python phish_tracker.py -u "http://192.168.1.50/bank" --fast
-  python phish_tracker.py -u "https://suspicious-site.top" --json report.json --markdown report.md
-  python phish_tracker.py   (Enters interactive prompt)
         """
     )
     parser.add_argument("-u", "--url", type=str, help="Target URL or domain to inspect")
     parser.add_argument("-f", "--file", type=str, help="Path to text file containing list of target URLs")
-    parser.add_argument("--fast", action="store_true", help="Fast mode (lexical URL heuristics only, skip network queries)")
-    parser.add_argument("--no-content", action="store_true", help="Skip passive HTML/DOM fetching (perform DNS, WHOIS, and SSL only)")
+    parser.add_argument("--tor", action="store_true", help="Route traffic through local Tor SOCKS5 proxy (port 9050 / 9150) to anonymize IP")
+    parser.add_argument("--proxy", type=str, help="Custom proxy URL (e.g. socks5h://127.0.0.1:1080 or http://127.0.0.1:8080)")
+    parser.add_argument("--passive", action="store_true", help="Zero-touch passive mode: Skip HTTP requests to target server to prevent IP logging")
+    parser.add_argument("--fast", action="store_true", help="Fast mode: Lexical heuristics only (skip network/DNS queries)")
+    parser.add_argument("--no-content", action="store_true", help="Skip HTML/DOM fetching (DNS, WHOIS, and SSL only)")
     parser.add_argument("--json", type=str, help="Export analysis result to JSON file")
     parser.add_argument("-m", "--markdown", type=str, help="Export analysis result to Markdown incident report")
 
     args = parser.parse_args()
 
-    # If no URL or file provided, default to interactive mode
     if not args.url and not args.file:
         interactive_mode(args)
     elif args.url:

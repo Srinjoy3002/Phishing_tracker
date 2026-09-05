@@ -72,18 +72,45 @@ When inspecting live content, executing active JavaScript poses severe operation
 
 ---
 
-## 3. Mathematical Scoring Engine
+## 2.5 Reverse Tunneling & Automated Phishing Kits (PyPhisher / Zphisher)
+
+Modern automated phishing frameworks (e.g. PyPhisher, Zphisher, Maskphish) have largely abandoned purchasing traditional domain names. Instead, they leverage ephemeral reverse tunnels and port-forwarding services:
+* **Cloudflare Quick Tunnels (`trycloudflare.com`)**: Generates automated random 4-word subdomains (e.g. `word1-word2-word3-word4.trycloudflare.com`) using `cloudflared`. Bypasses conventional WHOIS/RDAP age checks because the parent domain (`cloudflare.com`) is highly reputable.
+* **Other Abused Tunnel Providers**: `loca.lt` (Localtunnel), `ngrok-free.app`, `serveo.net`, `pinggy.link`, `localxpose.io`.
+* **Phishing Kit Fingerprints**:
+  - Predetermined capture endpoints: `login.php`, `post.php`, `pass.php`, `capture.php`.
+  - Exfiltration webhooks: Embedded Telegram Bot API calls (`api.telegram.org/bot`) or Discord webhooks.
+  - Victim IP loggers: Embedded calls to `ip-api.com/json` or `ipify.org` combined with `navigator.geolocation` to capture visitor IP, ISP, and physical coordinates.
+
+---
+
+## 3. Operational Security (OPSEC) for Threat Analysts
+
+### 3.1 The De-Anonymization Threat
+When an analyst initiates an active HTTP GET request or TCP handshake to a live phishing site, TCP packets originate from the analyst's workstation IP address. Automated phishing kits read `$_SERVER['REMOTE_ADDR']` or Cloudflare proxy headers (`HTTP_CF_CONNECTING_IP`) and immediately log the analyst's identity.
+
+### 3.2 Defensive Countermeasures & Stealth Triage
+1. **Tor SOCKS5 Tunneling (`--tor`)**:
+   Routing all outbound HTTP requests through Tor (`socks5h://127.0.0.1:9050`). The phishing kit only logs a randomized Tor exit node IP, completely concealing the analyst's identity and geographical location.
+2. **Custom Proxy Chaining (`--proxy`)**:
+   Tunneling through intermediate forward proxies or commercial VPN nodes.
+3. **Zero-Touch Passive Reconnaissance (`--passive`)**:
+   Conducting lexical, reverse-tunnel, and out-of-band DNS analysis without sending a single IP packet to the target web server.
+
+---
+
+## 4. Mathematical Scoring Engine & MITRE ATT&CK Matrix
 
 $$\text{Total Score } S = \min\left(100, \sum_{k} W_k \cdot \mathbb{I}(E_k)\right)$$
-
-Where $W_k$ represents the empirical risk weight of indicator $E_k$, and $\mathbb{I}$ is the binary activation indicator.
 
 ### MITRE ATT&CK Correlation Table
 | ATT&CK ID | Technique Name | Indicator Vector | Weight |
 | :--- | :--- | :--- | :--- |
-| `T1566.002` | Spearphishing Link | Brand spoofing + Credential keyword | +30 |
+| `T1585` | Establish Accounts: Ephemeral Reverse Tunnel | Target hosted on `trycloudflare.com`, `ngrok`, `loca.lt` | +40 |
+| `T1566.002` | Spearphishing Link | Deceptive URL masking bait (`@` trick) / Combosquatting | +35 |
+| `T1056.003` | Input Capture: Web Portal Capture | Credential form on reverse tunnel / `login.php` kit endpoint | +55 |
+| `T1027` | Obfuscated / Tracking Code | Victim IP Logger (`ip-api.com`) / Geolocation trap | +30 |
 | `T1583.001` | Acquire Domains | High-abuse TLD / Newly registered domain | +30 |
 | `T1583.008` | Malicious SSL Certs | Self-signed / Expired / Mismatched SSL | +30 |
 | `T1584.004` | Compromise DNS | Fast-Flux DNS / Domain Resolution Failure | +25 |
-| `T1056.003` | Web Portal Capture | Password form exfiltrating to external host | +40 |
-| `T1027` | Obfuscated Code | Hidden iframe / Anti-analysis event blockers | +15 |
+

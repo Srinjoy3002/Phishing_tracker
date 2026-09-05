@@ -1,0 +1,52 @@
+{
+  "url": "http://192.168.1.100/secure-banking/login.php",
+  "hostname": "192.168.1.100",
+  "scheme": "http",
+  "risk_score": 45,
+  "classification": "LOW RISK",
+  "color_tag": "cyan",
+  "emoji": "\ud83d\udfe1",
+  "findings_count": 2,
+  "findings": [
+    {
+      "id": "ip_in_url",
+      "category": "Lexical",
+      "title": "IP Address Used in Hostname",
+      "description": "URL uses raw IP '192.168.1.100' instead of a legitimate domain name to evade domain registration scrutiny.",
+      "mitre": "T1566.002",
+      "severity": "HIGH",
+      "mitre_name": "Spearphishing Link",
+      "mitre_desc": "Adversary sends a link to victim leading to credential harvesting or exploit."
+    },
+    {
+      "id": "sensitive_keywords",
+      "category": "Lexical",
+      "title": "Credential / Lure Keywords Detected (login, secure, banking)",
+      "description": "URL contains multiple high-risk credential harvesting keywords: login, secure, banking",
+      "mitre": "T1566.002",
+      "severity": "MEDIUM",
+      "mitre_name": "Spearphishing Link",
+      "mitre_desc": "Adversary sends a link to victim leading to credential harvesting or exploit."
+    }
+  ],
+  "recommendations": [
+    "\u2705 No critical phishing signatures identified. Standard perimeter monitoring applies."
+  ],
+  "telemetry": {
+    "lexical": {
+      "raw_url": "http://192.168.1.100/secure-banking/login.php",
+      "hostname": "192.168.1.100",
+      "scheme": "http",
+      "path": "/secure-banking/login.php",
+      "entropy": 0.0,
+      "url_length": 45,
+      "subdomain_count": 2,
+      "tld": "100",
+      "brand_target": null
+    },
+    "dns": {},
+    "whois": {},
+    "ssl": {},
+    "content": {}
+  }
+}

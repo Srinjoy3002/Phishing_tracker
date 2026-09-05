@@ -1,0 +1,25 @@
+# Curated Phishing & Legitimate Test Corpus for PhishTracker
+# Lines starting with # are ignored
+
+# 1. Legitimate High-Reputation Domains (Expected: Safe / Benign)
+https://www.google.com
+https://www.microsoft.com
+https://github.com
+
+# 2. Raw IP Address Hostname with Sensitive Path (Expected: High Risk / Phishing)
+http://192.168.1.100/secure-banking/login.php
+
+# 3. Brand Combosquatting on Suspicious High-Abuse TLD (Expected: Critical Phishing)
+http://paypal-security-verification-account.xyz/webscr?cmd=_login
+
+# 4. Excessive Subdomain Depth with Brand Masquerading (Expected: Critical Phishing)
+http://login.microsoft.com.account-update.sec-auth.top/signin
+
+# 5. High Entropy DGA Domain on Suspicious TLD (Expected: Suspicious)
+https://qzx783mnbv9102klw.buzz/reset-password
+
+# 6. RFC 3986 Authority Redirection Trick (Expected: Critical Phishing)
+http://legitimate-bank.com@malicious-harvesting-site.work/login
+
+# 7. URL Shortener Service (Expected: Informational / Suspicious)
+https://bit.ly/test-lure-sample

@@ -50,16 +50,38 @@
 
 ### 🪟 Windows Terminal / PowerShell / Command Prompt
 
+#### Method A: Standard Git & Terminal (Recommended)
 ```powershell
-# 1. Clone or navigate to the project directory
-cd D:\projects\Phishing_tracker
+# 1. Clone the repository to your machine
+git clone https://github.com/Srinjoy3002/Phishing_tracker.git
 
-# 2. Install required Python packages
+# 2. Navigate into the project folder
+cd Phishing_tracker
+
+# 3. Install required cybersecurity libraries
 python -m pip install -r requirements.txt
 
-# 3. Verify installation
-python phish_tracker.py --help
+# 4. Run the interactive tool
+python phish_tracker.py
 ```
+
+#### Method B: 1-Line Copy & Paste (PowerShell)
+```powershell
+git clone https://github.com/Srinjoy3002/Phishing_tracker.git; cd Phishing_tracker; python -m pip install -r requirements.txt; python phish_tracker.py
+```
+
+#### Method C: 1-Click Automated Batch Installer
+1. Download or clone this repository.
+2. Double-click `install.bat` inside the folder. It will automatically detect Python, install all dependencies, verify the engine, and launch the tool!
+
+#### Method D: Direct Global Install via Pip (No Git Clone Needed)
+```powershell
+pip install git+https://github.com/Srinjoy3002/Phishing_tracker.git
+
+# Now you can run it globally from anywhere in your terminal:
+phish-tracker -u "https://suspicious-site.com"
+```
+
 
 ### 🐉 Kali Linux (Bash / Zsh)
 
@@ -158,9 +180,13 @@ $$\text{Risk Score} = \min\left(100, \sum_{i} W_i \cdot \mathbb{I}(\text{Indicat
 ## 📂 Project Architecture
 
 ```
-D:\projects\Phishing_tracker\
+Phishing_tracker/
 │
+├── install.bat               # 1-Click automated Windows installer
+├── install.ps1               # Automated PowerShell setup script
+├── setup.py                  # Python pip package setup file
 ├── phish_tracker.py          # CLI application entrypoint & interactive REPL
+
 ├── requirements.txt          # Python dependencies (rich, requests, dnspython, cryptography)
 ├── README.md                 # Project documentation & Kali/Windows setup guide
 │

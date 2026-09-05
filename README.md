@@ -132,6 +132,13 @@ Generate compliance, SIEM-ready JSON, and incident response Markdown reports:
 python phish_tracker.py -u "http://192.168.1.100/secure-banking/login.php" --json report.json --markdown report.md
 ```
 
+### 7. One-Click Self-Updating
+Keep rules, signatures, and dependencies up to date with a single command:
+```bash
+python phish_tracker.py --update
+```
+
+
 
 ---
 

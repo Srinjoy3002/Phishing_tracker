@@ -196,6 +196,19 @@ If presenting this project for your cybersecurity degree or viva:
 
 ---
 
+## 🛠️ Contributing & Adding New Features
+
+Want to expand the brand database, add newly discovered reverse-tunnel services, or improve detection signatures?
+
+- **[Read the Full Contributor & Developer Guide](CONTRIBUTING.md)**
+- **Adding a Brand in 1 Step:** Add domain to `TARGETED_BRANDS` in [`core/config.py`](core/config.py).
+- **Adding a Tunnel Provider:** Add domain to `REVERSE_TUNNEL_SERVICES` in [`core/config.py`](core/config.py).
+- **Running Tests:** `python -m unittest examples/test_pyphisher_detection.py`
+- **Publishing Updates:** `git add . && git commit -m "feat: ..." && git push origin main`
+
+---
+
 ## 📜 License
 Developed for academic, research, and defensive security operations.  
 Released under the MIT License.
+

@@ -167,6 +167,31 @@ def interactive_mode(args):
             break
 
 
+import subprocess
+
+
+def self_update():
+    """Pull latest updates from GitHub repository and update dependencies."""
+    print_banner()
+    console.print("[bold cyan]🔄 Checking for PhishTracker updates from GitHub...[/bold cyan]\n")
+    try:
+        res = subprocess.run(["git", "pull", "origin", "main"], capture_output=True, text=True)
+        if res.returncode != 0:
+            console.print(f"[bold red]❌ Update failed: {res.stderr.strip()}[/bold red]")
+            return
+
+        if "Already up to date" in res.stdout:
+            console.print("[bold green]✔ PhishTracker is already at the latest version![/bold green]")
+        else:
+            console.print(f"[yellow]{res.stdout.strip()}[/yellow]")
+            console.print("[bold green]✔ Successfully pulled latest code from GitHub![/bold green]")
+            console.print("[cyan]Updating Python dependencies...[/cyan]")
+            subprocess.run([sys.executable, "-m", "pip", "install", "-r", "requirements.txt", "--upgrade", "--quiet"])
+            console.print("[bold green]✔ Dependencies updated successfully.[/bold green]")
+    except Exception as e:
+        console.print(f"[bold red]❌ Error executing update: {e}[/bold red]")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="PhishTracker: Multi-Vector Phishing Detector with OPSEC & PyPhisher Detection",
@@ -188,12 +213,16 @@ Examples:
   # Zero-Touch Stealth Recon (Zero packets sent to target web server, 100% invisible to PyPhisher):
   python phish_tracker.py -u "https://suspicious-link.com" --passive
 
+  # Update tool to latest version:
+  python phish_tracker.py --update
+
   # Batch Triage:
   python phish_tracker.py -f samples/test_urls.txt
         """
     )
     parser.add_argument("-u", "--url", type=str, help="Target URL or domain to inspect")
     parser.add_argument("-f", "--file", type=str, help="Path to text file containing list of target URLs")
+    parser.add_argument("--update", action="store_true", help="Update PhishTracker to the latest version from GitHub")
     parser.add_argument("--tor", action="store_true", help="Route traffic through local Tor SOCKS5 proxy (port 9050 / 9150) to anonymize IP")
     parser.add_argument("--proxy", type=str, help="Custom proxy URL (e.g. socks5h://127.0.0.1:1080 or http://127.0.0.1:8080)")
     parser.add_argument("--passive", action="store_true", help="Zero-touch passive mode: Skip HTTP requests to target server to prevent IP logging")
@@ -204,7 +233,9 @@ Examples:
 
     args = parser.parse_args()
 
-    if not args.url and not args.file:
+    if args.update:
+        self_update()
+    elif not args.url and not args.file:
         interactive_mode(args)
     elif args.url:
         print_banner()
@@ -212,6 +243,7 @@ Examples:
     elif args.file:
         print_banner()
         scan_batch(args.file, args)
+
 
 
 if __name__ == "__main__":
